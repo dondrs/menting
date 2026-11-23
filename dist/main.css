@@ -30,6 +30,12 @@
 }
 
 /* ---------- Menuknop ---------- */
+/* Webflow geeft .w-button standaard een blauwe achtergrond; het vlak komt hier uit ::before. */
+.navbar__button,
+.navbar__button.w-button {
+  background-color: transparent;
+}
+
 .navbar__button {
   isolation: isolate;
   -webkit-tap-highlight-color: transparent;
