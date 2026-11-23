@@ -7,11 +7,15 @@
   'use strict';
 
   /* ------------------------------------------------------------------
-   * Full page menu
+   * Full page menu (gevoel naar vv-ebc.webflow.io)
    * Markup (Webflow component "Navbar"):
    *   [data-navbar]             header
    *     [data-menu-toggle]      menuknop (link met role="button")
+   *     [data-menu-layers]      wrapper met [data-menu-layer] wipe-lagen
    *     [data-menu]             full page menu
+   * Openen: lagen vegen gestaffeld van rechts naar binnen, daarna het menu,
+   * dan draaien de links omhoog in beeld en faden de footer-items in.
+   * Sluiten: alles veegt in omgekeerde volgorde terug naar rechts.
    * ------------------------------------------------------------------ */
   function initMenu(navbar) {
     var menu = navbar.querySelector('[data-menu]');
@@ -20,95 +24,116 @@
 
     var gsap = window.gsap;
     var root = document.documentElement;
-    var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    var items = menu.querySelectorAll('.menu__item');
-    var footer = menu.querySelector('.menu__footer');
-    var lines = toggle.querySelectorAll('.navbar__button-line');
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var layerWrap = navbar.querySelector('[data-menu-layers]');
+    var layers = Array.prototype.slice.call(navbar.querySelectorAll('[data-menu-layer]'));
+    var linkParts = menu.querySelectorAll('.menu__number, .menu__label');
+    var fades = menu.querySelectorAll('.menu__credit, .menu__legal-item');
+    var icon = toggle.querySelector('.navbar__button-icon');
     var isOpen = false;
-    var timeline = null;
+    var tl = null;
 
-    setClosedA11y();
+    // Timing (zelfde waarden als vv EBC)
+    var T = { wipe: 0.6, wipeStagger: 0.12, links: 1, linkStagger: 0.05, close: 0.5 };
 
-    function setClosedA11y() {
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Menu openen');
-      menu.setAttribute('aria-hidden', 'true');
-      menu.inert = true;
+    function show(display) {
+      if (layerWrap) layerWrap.style.display = display ? 'block' : 'none';
+      menu.style.display = display ? 'flex' : 'none';
     }
 
-    function setOpenA11y() {
-      toggle.setAttribute('aria-expanded', 'true');
-      toggle.setAttribute('aria-label', 'Menu sluiten');
-      menu.setAttribute('aria-hidden', 'false');
-      menu.inert = false;
+    function setA11y(open) {
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.setAttribute('aria-label', open ? 'Menu sluiten' : 'Menu openen');
+      menu.setAttribute('aria-hidden', open ? 'false' : 'true');
+      menu.inert = !open;
+    }
+    setA11y(false);
+
+    if (gsap) gsap.set(layers.concat(menu), { xPercent: 101 });
+
+    function spinIcon(open) {
+      if (!gsap || !icon) return;
+      if (reduce) { gsap.set(icon, { rotate: 0 }); return; }
+      gsap.to(icon, { rotate: open ? 180 : 0, duration: 0.7, ease: 'power3.inOut', overwrite: true });
     }
 
-    // Afstand tussen de hamburgerlijnen meten, zodat het kruisje precies klopt.
-    function lineOffset() {
-      if (lines.length < 3) return 0;
-      return lines[1].offsetTop - lines[0].offsetTop;
-    }
-
-    function buildTimeline() {
-      var offset = lineOffset();
-      var tl = gsap.timeline({
-        paused: true,
-        defaults: { ease: 'power3.out' },
-        onReverseComplete: function () {
-          gsap.set(menu, { display: 'none' });
-        }
-      });
-
-      tl.set(menu, { display: 'flex' })
-        .fromTo(menu,
-          { clipPath: 'inset(0% 0% 100% 0%)' },
-          { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.7, ease: 'power3.inOut' }, 0)
-        .fromTo(items,
-          { yPercent: 60, autoAlpha: 0 },
-          { yPercent: 0, autoAlpha: 1, duration: 0.6, stagger: 0.06 }, 0.35)
-        .fromTo(footer,
-          { autoAlpha: 0 },
-          { autoAlpha: 1, duration: 0.5 }, 0.6);
-
-      if (lines.length >= 3) {
-        tl.to(lines[0], { y: offset, rotate: 45, duration: 0.4, ease: 'power2.inOut' }, 0)
-          .to(lines[1], { autoAlpha: 0, duration: 0.2 }, 0)
-          .to(lines[2], { y: -offset, rotate: -45, duration: 0.4, ease: 'power2.inOut' }, 0);
+    // Tijdens de wipe per frame kijken welke laag onder het logo ligt:
+    // op de lichtgroene laag wordt het logo donker, op de andere lagen/het menu licht.
+    // Ligt er niets meer onder (bij sluiten), dan volgt het logo weer de pagina.
+    var logo = navbar.querySelector('.navbar__logo');
+    function logoDark(on) { navbar.classList.toggle('is-logo-dark', on); }
+    function layerUnderLogo() {
+      if (!logo) return null;
+      var r = logo.getBoundingClientRect();
+      var x = r.left + r.width / 2;
+      var stack = [menu].concat(layers.slice().reverse()); // bovenste eerst
+      for (var i = 0; i < stack.length; i++) {
+        if (stack[i].getBoundingClientRect().left <= x) return stack[i];
       }
-      return tl;
+      return null;
+    }
+    function syncLogo() {
+      var top = layerUnderLogo();
+      logoDark(top !== null && top === layers[0]);
+      if (!isOpen && top === null && navbar.classList.contains('is-menu-open')) {
+        // Direct naar de paginakleur, zonder de normale kleur-transitie.
+        if (logo) {
+          logo.style.transition = 'none';
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () { logo.style.transition = ''; });
+          });
+        }
+        navbar.classList.remove('is-menu-open');
+        document.dispatchEvent(new CustomEvent('menting:navbar-update'));
+      }
     }
 
     function open() {
       if (isOpen) return;
       isOpen = true;
+      logoDark(false);
       navbar.classList.add('is-menu-open');
       root.classList.add('is-menu-locked');
-      setOpenA11y();
+      setA11y(true);
+      spinIcon(true);
+      show(true);
 
-      if (gsap && !reducedMotion) {
-        if (!timeline) timeline = buildTimeline();
-        timeline.timeScale(1).play();
-      } else {
-        menu.style.display = 'flex';
+      if (!gsap) return;
+      if (tl) tl.kill();
+      if (reduce) {
+        gsap.set(layers.concat(menu), { xPercent: 0 });
+        return;
       }
-      // Focus blijft op de menuknop (die nu "Menu sluiten" heet); Tab gaat daarna het menu in.
+      tl = gsap.timeline({ defaults: { ease: 'expo.out' }, onUpdate: syncLogo })
+        .fromTo(layers, { xPercent: 101 }, { xPercent: 0, duration: T.wipe, stagger: T.wipeStagger, ease: 'power4.inOut' }, 0)
+        .fromTo(menu, { xPercent: 101 }, { xPercent: 0, duration: T.wipe, ease: 'power4.inOut' }, T.wipeStagger * layers.length)
+        .fromTo(linkParts, { yPercent: 140, rotate: 10 }, { yPercent: 0, rotate: 0, duration: T.links, stagger: T.linkStagger }, 0.45)
+        .fromTo(fades, { autoAlpha: 0, yPercent: 50 }, { autoAlpha: 1, yPercent: 0, duration: 0.6, stagger: 0.04 }, 0.55);
     }
 
     function close(returnFocus) {
       if (!isOpen) return;
       isOpen = false;
-      navbar.classList.remove('is-menu-open');
       root.classList.remove('is-menu-locked');
-      setClosedA11y();
+      setA11y(false);
+      spinIcon(false);
 
-      if (gsap && !reducedMotion && timeline) {
-        timeline.timeScale(1.6).reverse();
-      } else {
-        menu.style.display = 'none';
-      }
-
+      var done = function () {
+        logoDark(false);
+        navbar.classList.remove('is-menu-open');
+        show(false);
+        document.dispatchEvent(new CustomEvent('menting:navbar-update'));
+      };
       if (returnFocus !== false) toggle.focus({ preventScroll: true });
-      document.dispatchEvent(new CustomEvent('menting:navbar-update'));
+
+      if (!gsap || reduce) {
+        if (gsap) gsap.set(layers.concat(menu), { xPercent: 101 });
+        done();
+        return;
+      }
+      if (tl) tl.kill();
+      tl = gsap.timeline({ onComplete: done, onUpdate: syncLogo })
+        .to([menu].concat(layers.slice().reverse()), { xPercent: 101, duration: T.close, stagger: 0.05, ease: 'power3.inOut' }, 0);
     }
 
     toggle.addEventListener('click', function (event) {
@@ -133,13 +158,11 @@
         return;
       }
 
-      // Focus binnen navbar + menu houden zolang het menu open is.
+      // Focus binnen menuknop + menu houden zolang het menu open is.
       if (event.key === 'Tab') {
-        var focusables = Array.prototype.filter.call(
-          navbar.querySelectorAll('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'),
-          function (el) { return el.offsetParent !== null || el === toggle; }
-        );
-        if (!focusables.length) return;
+        var focusables = [toggle].concat(Array.prototype.slice.call(
+          menu.querySelectorAll('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')
+        ));
         var first = focusables[0];
         var last = focusables[focusables.length - 1];
         if (event.shiftKey && document.activeElement === first) {
@@ -154,8 +177,7 @@
 
     // Klik op een link in het menu: menu sluiten (belangrijk voor ankers op dezelfde pagina).
     menu.addEventListener('click', function (event) {
-      var link = event.target.closest('a[href]');
-      if (link) close(false);
+      if (event.target.closest('a[href]')) close(false);
     });
   }
 
