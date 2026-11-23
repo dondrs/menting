@@ -36,20 +36,25 @@
   transition: color 0.3s ease;
 }
 
-/* Het vlak achter "Menu": schuift vanuit het vierkantje open bij hover en blijft staan als het menu open is. */
+/* Het vlak achter de knop: schuift vanuit het vierkantje open bij hover en blijft staan als het menu open is.
+   Subtiel glas: lichte tint + achtergrond-blur + dunne rand, zodat het op foto, licht en donker zichtbaar is. */
 .navbar__button::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background-color: var(--_basis---menu--knop, #263c26);
+  background-color: rgba(212, 236, 213, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(212, 236, 213, 0.16);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   clip-path: inset(0 0 0 calc(100% - 2.75em) round 0.25em);
   opacity: 0;
   transition:
     clip-path var(--nav-duration) var(--nav-ease),
     opacity var(--nav-duration) var(--nav-ease),
-    background-color 0.3s ease;
+    background-color 0.3s ease,
+    box-shadow 0.3s ease;
   pointer-events: none;
 }
 
@@ -60,23 +65,49 @@
   opacity: 1;
 }
 
+/* Het vierkantje achter de hamburger: in rust weg, groeit op bij hover, blijft staan als het menu open is. */
 .navbar__button-icon {
+  color: inherit;
+  transition: color var(--nav-duration) var(--nav-ease);
+}
+
+.navbar__button-icon::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: var(--_basis---logo--licht, #b8e0b9);
+  transform: scale(0);
   transition:
-    background-color 0.3s ease,
-    transform 0.2s var(--nav-ease);
+    transform var(--nav-duration) var(--nav-ease),
+    filter 0.15s ease,
+    background-color 0.3s ease;
 }
 
-.navbar__button:active .navbar__button-icon {
-  transform: scale(0.88);
+.navbar__button:hover .navbar__button-icon::before,
+.navbar__button:focus-visible .navbar__button-icon::before,
+.navbar__button[aria-expanded="true"] .navbar__button-icon::before {
+  transform: scale(1);
 }
 
-/* Hamburger -> kruis (het icoon draait daarbij 180° mee via GSAP) */
+/* Streepjes donker zodra het lichte vierkantje erachter staat */
+.navbar__button:hover .navbar__button-icon,
+.navbar__button:focus-visible .navbar__button-icon,
+.navbar__button[aria-expanded="true"] .navbar__button-icon {
+  color: var(--_basis---logo--donker, #19391a);
+}
+
+/* Op klik: vierkantje iets donkerder */
+.navbar__button:active .navbar__button-icon::before {
+  filter: brightness(0.85);
+}
+
+/* Hamburger -> kruis */
 .navbar__button-line {
   transform-origin: 50% 50%;
   transition:
     transform var(--nav-duration) var(--nav-ease),
-    opacity var(--nav-duration) var(--nav-ease),
-    background-color 0.3s ease;
+    opacity var(--nav-duration) var(--nav-ease);
 }
 
 .navbar__button[aria-expanded="true"] .navbar__button-line:nth-child(1) {
@@ -91,21 +122,23 @@
   transform: translateY(calc(-0.25em - 2px)) rotate(-45deg);
 }
 
-/* Op een lichte achtergrond: donkere tekst en een donker vierkantje met lichte lijnen (zoals in XD). */
+/* Op een lichte achtergrond: donkere tekst/streepjes, donker vierkantje met lichte streepjes, donkere glastint. */
 .navbar.is-on-light:not(.is-menu-open) .navbar__button {
   color: var(--_basis---logo--donker, #19391a);
 }
 
 .navbar.is-on-light:not(.is-menu-open) .navbar__button::before {
-  background-color: rgba(25, 57, 26, 0.1);
+  background-color: rgba(25, 57, 26, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(25, 57, 26, 0.12);
 }
 
-.navbar.is-on-light:not(.is-menu-open) .navbar__button-icon {
+.navbar.is-on-light:not(.is-menu-open) .navbar__button-icon::before {
   background-color: var(--_basis---logo--donker, #19391a);
 }
 
-.navbar.is-on-light:not(.is-menu-open) .navbar__button-line {
-  background-color: var(--_basis---logo--licht, #b8e0b9);
+.navbar.is-on-light:not(.is-menu-open) .navbar__button:hover .navbar__button-icon,
+.navbar.is-on-light:not(.is-menu-open) .navbar__button:focus-visible .navbar__button-icon {
+  color: var(--_basis---logo--licht, #b8e0b9);
 }
 
 .navbar__button:focus-visible,
@@ -127,6 +160,7 @@ html.is-menu-locked body {
   .navbar__button,
   .navbar__button::before,
   .navbar__button-icon,
+  .navbar__button-icon::before,
   .navbar__button-line {
     transition: none !important;
   }

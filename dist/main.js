@@ -13,9 +13,9 @@
    *     [data-menu-toggle]      menuknop (link met role="button")
    *     [data-menu-layers]      wrapper met [data-menu-layer] wipe-lagen
    *     [data-menu]             full page menu
-   * Openen: lagen vegen gestaffeld van rechts naar binnen, daarna het menu,
-   * dan draaien de links omhoog in beeld en faden de footer-items in.
-   * Sluiten: alles veegt in omgekeerde volgorde terug naar rechts.
+   * Openen: lagen schuiven snel maar soepel gestaffeld vanaf de bovenkant in beeld,
+   * daarna het menu; dan draaien de links omhoog in beeld en faden de footer-items in.
+   * Sluiten: alles schuift in omgekeerde volgorde terug naar boven.
    * ------------------------------------------------------------------ */
   function initMenu(navbar) {
     var menu = navbar.querySelector('[data-menu]');
@@ -29,12 +29,11 @@
     var layers = Array.prototype.slice.call(navbar.querySelectorAll('[data-menu-layer]'));
     var linkParts = menu.querySelectorAll('.menu__number, .menu__label');
     var fades = menu.querySelectorAll('.menu__credit, .menu__legal-item');
-    var icon = toggle.querySelector('.navbar__button-icon');
     var isOpen = false;
     var tl = null;
 
-    // Timing (zelfde waarden als vv EBC)
-    var T = { wipe: 0.6, wipeStagger: 0.12, links: 1, linkStagger: 0.05, close: 0.5 };
+    // Timing: vlug maar smooth
+    var T = { wipe: 0.55, wipeStagger: 0.07, links: 0.9, linkStagger: 0.05, close: 0.45 };
 
     function show(display) {
       if (layerWrap) layerWrap.style.display = display ? 'block' : 'none';
@@ -49,13 +48,7 @@
     }
     setA11y(false);
 
-    if (gsap) gsap.set(layers.concat(menu), { xPercent: 101 });
-
-    function spinIcon(open) {
-      if (!gsap || !icon) return;
-      if (reduce) { gsap.set(icon, { rotate: 0 }); return; }
-      gsap.to(icon, { rotate: open ? 180 : 0, duration: 0.7, ease: 'power3.inOut', overwrite: true });
-    }
+    if (gsap) gsap.set(layers.concat(menu), { yPercent: -101 });
 
     // Tijdens de wipe per frame kijken welke laag onder het logo ligt:
     // op de lichtgroene laag wordt het logo donker, op de andere lagen/het menu licht.
@@ -65,10 +58,10 @@
     function layerUnderLogo() {
       if (!logo) return null;
       var r = logo.getBoundingClientRect();
-      var x = r.left + r.width / 2;
+      var y = r.top + r.height / 2;
       var stack = [menu].concat(layers.slice().reverse()); // bovenste eerst
       for (var i = 0; i < stack.length; i++) {
-        if (stack[i].getBoundingClientRect().left <= x) return stack[i];
+        if (stack[i].getBoundingClientRect().bottom >= y) return stack[i];
       }
       return null;
     }
@@ -95,20 +88,19 @@
       navbar.classList.add('is-menu-open');
       root.classList.add('is-menu-locked');
       setA11y(true);
-      spinIcon(true);
       show(true);
 
       if (!gsap) return;
       if (tl) tl.kill();
       if (reduce) {
-        gsap.set(layers.concat(menu), { xPercent: 0 });
+        gsap.set(layers.concat(menu), { yPercent: 0 });
         return;
       }
       tl = gsap.timeline({ defaults: { ease: 'expo.out' }, onUpdate: syncLogo })
-        .fromTo(layers, { xPercent: 101 }, { xPercent: 0, duration: T.wipe, stagger: T.wipeStagger, ease: 'power4.inOut' }, 0)
-        .fromTo(menu, { xPercent: 101 }, { xPercent: 0, duration: T.wipe, ease: 'power4.inOut' }, T.wipeStagger * layers.length)
-        .fromTo(linkParts, { yPercent: 140, rotate: 10 }, { yPercent: 0, rotate: 0, duration: T.links, stagger: T.linkStagger }, 0.45)
-        .fromTo(fades, { autoAlpha: 0, yPercent: 50 }, { autoAlpha: 1, yPercent: 0, duration: 0.6, stagger: 0.04 }, 0.55);
+        .fromTo(layers, { yPercent: -101 }, { yPercent: 0, duration: T.wipe, stagger: T.wipeStagger, ease: 'power3.inOut' }, 0)
+        .fromTo(menu, { yPercent: -101 }, { yPercent: 0, duration: T.wipe, ease: 'power3.inOut' }, T.wipeStagger * layers.length)
+        .fromTo(linkParts, { yPercent: 140, rotate: 10 }, { yPercent: 0, rotate: 0, duration: T.links, stagger: T.linkStagger }, 0.35)
+        .fromTo(fades, { autoAlpha: 0, yPercent: 50 }, { autoAlpha: 1, yPercent: 0, duration: 0.6, stagger: 0.04 }, 0.45);
     }
 
     function close(returnFocus) {
@@ -116,7 +108,6 @@
       isOpen = false;
       root.classList.remove('is-menu-locked');
       setA11y(false);
-      spinIcon(false);
 
       var done = function () {
         logoDark(false);
@@ -127,13 +118,13 @@
       if (returnFocus !== false) toggle.focus({ preventScroll: true });
 
       if (!gsap || reduce) {
-        if (gsap) gsap.set(layers.concat(menu), { xPercent: 101 });
+        if (gsap) gsap.set(layers.concat(menu), { yPercent: -101 });
         done();
         return;
       }
       if (tl) tl.kill();
       tl = gsap.timeline({ onComplete: done, onUpdate: syncLogo })
-        .to([menu].concat(layers.slice().reverse()), { xPercent: 101, duration: T.close, stagger: 0.05, ease: 'power3.inOut' }, 0);
+        .to([menu].concat(layers.slice().reverse()), { yPercent: -101, duration: T.close, stagger: 0.04, ease: 'power3.inOut' }, 0);
     }
 
     toggle.addEventListener('click', function (event) {
@@ -179,6 +170,12 @@
     menu.addEventListener('click', function (event) {
       if (event.target.closest('a[href]')) close(false);
     });
+
+    return {
+      open: open,
+      close: close,
+      isOpen: function () { return isOpen; }
+    };
   }
 
   /* ------------------------------------------------------------------
@@ -254,13 +251,45 @@
     window.addEventListener('load', requestUpdate);
     document.addEventListener('menting:navbar-update', requestUpdate);
     update();
+
+    return { update: requestUpdate };
+  }
+
+  /* ------------------------------------------------------------------
+   * Init + API voor pagina-overgangen (Barba.js)
+   * De navbar staat buiten [data-barba="container"] en blijft dus tussen pagina's
+   * bestaan: alles wordt maar één keer gekoppeld.
+   * window.MentingNav = { open(), close(returnFocus), isOpen(), update() }
+   * Is Barba aanwezig, dan sluit het menu bij vertrek en wordt de logo-kleur
+   * na de wissel opnieuw bepaald. Anders zelf aanroepen in de Barba-hooks.
+   * ------------------------------------------------------------------ */
+  function connectBarba(nav) {
+    var barba = window.barba;
+    if (!barba || !barba.hooks || nav._barbaConnected) return;
+    nav._barbaConnected = true;
+    barba.hooks.beforeLeave(function () { nav.close(false); });
+    barba.hooks.after(function () { nav.update(); });
   }
 
   function init() {
     var navbar = document.querySelector('[data-navbar]');
-    if (!navbar) return;
-    initMenu(navbar);
-    initLogoTheme(navbar);
+    if (!navbar || navbar.hasAttribute('data-navbar-ready')) return;
+    navbar.setAttribute('data-navbar-ready', '');
+
+    var menuApi = initMenu(navbar) || {};
+    var themeApi = initLogoTheme(navbar) || {};
+    var noop = function () {};
+
+    var nav = window.MentingNav = {
+      open: menuApi.open || noop,
+      close: menuApi.close || noop,
+      isOpen: menuApi.isOpen || function () { return false; },
+      update: themeApi.update || noop,
+      connectBarba: function () { connectBarba(nav); }
+    };
+
+    connectBarba(nav);
+    window.addEventListener('load', function () { connectBarba(nav); });
   }
 
   if (document.readyState === 'loading') {
