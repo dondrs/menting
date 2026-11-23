@@ -97,6 +97,23 @@
   color: var(--_basis---logo--donker, #19391a);
 }
 
+/* Hover terwijl het menu open is: glasvlak iets sterker, vierkantje veert in, kruisje draait een kwartslag. */
+.navbar__button[aria-expanded="true"]:hover::before {
+  background-color: rgba(212, 236, 213, 0.16);
+}
+
+.navbar__button[aria-expanded="true"]:hover .navbar__button-line:nth-child(1) {
+  transform: translateY(calc(0.25em + 2px)) rotate(135deg);
+}
+
+.navbar__button[aria-expanded="true"]:hover .navbar__button-line:nth-child(3) {
+  transform: translateY(calc(-0.25em - 2px)) rotate(45deg);
+}
+
+.navbar__button[aria-expanded="true"]:hover .navbar__button-icon::before {
+  transform: scale(0.88);
+}
+
 /* Op klik: vierkantje iets donkerder */
 .navbar__button:active .navbar__button-icon::before {
   filter: brightness(0.85);
