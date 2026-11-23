@@ -10,6 +10,25 @@
   --nav-ease: cubic-bezier(0.625, 0.05, 0, 1);
 }
 
+/* ---------- Basis-typografie ----------
+   Webflow-tag-styles voor h1–h6 kunnen niet via de API; de standaard staat daarom hier,
+   gekoppeld aan dezelfde variabelen als de heading-classes. Bree Serif heeft alleen 400. */
+h1, h2, h3, h4, h5, h6 {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-family: var(--_basis---font--heading, "Bree Serif", serif);
+  font-weight: 400;
+  line-height: var(--_typografie---regelhoogte--heading, 1.15);
+  color: var(--_thema---tekst--heading, inherit);
+}
+
+h1 { font-size: var(--_typografie---h1, 4em); }
+h2 { font-size: var(--_typografie---h2, 3em); }
+h3 { font-size: var(--_typografie---h3, 2em); }
+h4 { font-size: var(--_typografie---h4, 1.5em); }
+h5 { font-size: var(--_typografie---h5, 1.25em); }
+h6 { font-size: var(--_typografie---h6, 1em); }
+
 /* ---------- Navbar: logo-kleur ---------- */
 .navbar__logo {
   transition: color 0.3s ease;
