@@ -1,0 +1,40 @@
+/*!
+ * Menting – main.css
+ * Geladen in Webflow via jsDelivr: https://cdn.jsdelivr.net/gh/dondrs/menting@main/dist/main.css
+ * Alleen gedrag dat Webflow-classes zelf niet kunnen (states via JS, transitions).
+ */
+
+/* ---------- Navbar: logo-kleur ---------- */
+.navbar__logo {
+  transition: color 0.3s ease;
+}
+
+/* Op een lichte achtergrond wordt het woordmerk donkergroen (zolang het menu dicht is). */
+.navbar.is-on-light:not(.is-menu-open) .navbar__logo {
+  color: var(--_basis---logo--donker, #19391a);
+}
+
+/* ---------- Menuknop ---------- */
+.navbar__button-line {
+  transform-origin: 50% 50%;
+}
+
+.navbar__button:focus-visible,
+.navbar__logo:focus-visible,
+.menu a:focus-visible {
+  outline: 2px solid var(--_basis---logo--licht, #b8e0b9);
+  outline-offset: 4px;
+}
+
+/* ---------- Full page menu ---------- */
+/* Pagina niet laten scrollen achter het open menu. */
+html.is-menu-locked,
+html.is-menu-locked body {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navbar__logo {
+    transition: none;
+  }
+}
