@@ -172,6 +172,54 @@ html.is-menu-locked body {
   overflow: hidden;
 }
 
+/* ---------- Home: Werken & Leren ---------- */
+/* Lege CMS-tags (bijv. geen uren of periode) niet tonen. */
+.vacature-tag:empty,
+.vacature-tag.w-dyn-bind-empty {
+  display: none;
+}
+
+/* Lottie-bloem: zacht infaden zodra hij geladen is; svg vult de container, onderkant uitgelijnd. */
+[data-bloem-lottie] {
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+[data-bloem-lottie].is-loaded {
+  opacity: 1;
+}
+
+[data-bloem-lottie] svg {
+  display: block;
+}
+
+/* Pijltje schuift een stukje op bij hover over de kaart of de link. */
+.vacature-card .cta__arrow,
+.home-werken__link .cta__arrow {
+  transition: transform var(--nav-duration) var(--nav-ease);
+}
+
+.vacature-card:hover .cta__arrow,
+.vacature-card:focus-visible .cta__arrow,
+.home-werken__link:hover .cta__arrow,
+.home-werken__link:focus-visible .cta__arrow {
+  transform: translateX(0.15em);
+}
+
+.vacature-card:focus-visible,
+.home-werken__link:focus-visible {
+  outline: 2px solid var(--_basis---logo--licht, #b8e0b9);
+  outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-bloem-lottie],
+  .vacature-card .cta__arrow,
+  .home-werken__link .cta__arrow {
+    transition: none !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .navbar__logo,
   .navbar__button,

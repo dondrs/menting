@@ -2,6 +2,7 @@
  * Menting – main.js
  * Geladen in Webflow via jsDelivr: https://cdn.jsdelivr.net/gh/dondrs/menting@main/dist/main.js
  * Vereist GSAP (wordt vóór dit bestand geladen in de site-footer). Zonder GSAP werkt het menu nog, maar zonder animatie.
+ * De scroll-bloem laadt lottie-web zelf (alleen op pagina's met [data-bloem-lottie]).
  */
 (function () {
   'use strict';
@@ -268,10 +269,174 @@
     if (!barba || !barba.hooks || nav._barbaConnected) return;
     nav._barbaConnected = true;
     barba.hooks.beforeLeave(function () { nav.close(false); });
-    barba.hooks.after(function () { nav.update(); });
+    barba.hooks.after(function () { nav.update(); initBloemen(); });
   }
 
+  /* ------------------------------------------------------------------
+   * Bloem op scroll (Lottie)
+   * Markup (homepage, sectie "Werken & Leren"):
+   *   [data-bloem-section]                       de sectie
+   *     [data-bloem-lottie="<url naar .json>"]   container voor de Lottie
+   * De bloem gaat open zodra de container onderin beeld komt en is helemaal open
+   * als de onderkant van de sectie de onderkant van het scherm raakt.
+   * Terugscrollen = de bloem gaat weer dicht (frame volgt de scrollpositie).
+   * lottie-web wordt pas geladen als de bloem in de buurt komt (JSON is ~11 MB).
+   * Bij prefers-reduced-motion staat de bloem direct open, zonder scroll-koppeling.
+   * ------------------------------------------------------------------ */
+  var LOTTIE_SRC = 'https://cdn.jsdelivr.net/npm/lottie-web@5.12.2/build/player/lottie_light.min.js';
+  var lottieLoading = null;
+
+  function loadLottie() {
+    if (window.lottie) return Promise.resolve(window.lottie);
+    if (lottieLoading) return lottieLoading;
+    lottieLoading = new Promise(function (resolve, reject) {
+      var script = document.createElement('script');
+      script.src = LOTTIE_SRC;
+      script.async = true;
+      script.onload = function () { window.lottie ? resolve(window.lottie) : reject(new Error('lottie ontbreekt')); };
+      script.onerror = function () { lottieLoading = null; reject(new Error('lottie niet geladen')); };
+      document.head.appendChild(script);
+    });
+    return lottieLoading;
+  }
+
+  var bloemen = [];
+
+  function initBloem(container) {
+    if (container.hasAttribute('data-bloem-ready')) return;
+    container.setAttribute('data-bloem-ready', '');
+
+    var src = container.getAttribute('data-bloem-lottie');
+    if (!src) return;
+    var section = container.closest('[data-bloem-section]') || container.parentElement;
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    var state = {
+      container: container,
+      anim: null,
+      last: 0,          // laatste frame-index
+      current: 0,       // huidig (vloeiend) frame
+      target: 0,        // doel-frame volgens scrollpositie
+      raf: 0,
+      destroyed: false,
+      observer: null
+    };
+
+    // 0 = container komt onderin beeld, 1 = onderkant sectie raakt onderkant scherm.
+    function progress() {
+      var vh = window.innerHeight;
+      var flowerTop = container.getBoundingClientRect().top;
+      var sectionBottom = section.getBoundingClientRect().bottom;
+      var distance = Math.max(sectionBottom - flowerTop, vh * 0.5);
+      var p = (vh - flowerTop) / distance;
+      return p < 0 ? 0 : p > 1 ? 1 : p;
+    }
+
+    function render() {
+      state.raf = 0;
+      if (!state.anim || state.destroyed) return;
+      // Licht naijlen voor een zachte beweging; dichtbij het doel direct vastzetten.
+      var diff = state.target - state.current;
+      state.current = Math.abs(diff) < 0.5 ? state.target : state.current + diff * 0.18;
+      var frame = Math.round(state.current);
+      if (frame !== state.last) {
+        state.anim.goToAndStop(frame, true);
+        state.last = frame;
+      }
+      if (state.current !== state.target) state.raf = requestAnimationFrame(render);
+    }
+
+    function update() {
+      if (!state.anim || state.destroyed) return;
+      state.target = progress() * (state.anim.totalFrames - 1);
+      if (!state.raf) state.raf = requestAnimationFrame(render);
+    }
+
+    function start() {
+      var data = fetch(src).then(function (res) {
+        if (!res.ok) throw new Error('bloem-json ' + res.status);
+        return res.json();
+      });
+      Promise.all([loadLottie(), data]).then(function (result) {
+        var lottie = result[0];
+        var animationData = result[1];
+        if (state.destroyed) return;
+        // De beelden zitten als data-URI in de JSON maar staan gemarkeerd als extern (e: 0);
+        // dan plakt lottie er een pad voor en mislukt het laden. Markeer ze als ingebed.
+        (animationData.assets || []).forEach(function (asset) {
+          if (typeof asset.p === 'string' && asset.p.indexOf('data:') === 0) {
+            asset.e = 1;
+            asset.u = '';
+          }
+        });
+        state.anim = lottie.loadAnimation({
+          container: container,
+          renderer: 'svg',
+          loop: false,
+          autoplay: false,
+          animationData: animationData,
+          rendererSettings: { preserveAspectRatio: 'xMidYMax meet' }
+        });
+        state.anim.addEventListener('DOMLoaded', function () {
+          var last = state.anim.totalFrames - 1;
+          if (reduce) {
+            state.anim.goToAndStop(last, true);
+          } else {
+            // Direct op de juiste stand beginnen, zonder naijlen.
+            state.current = state.target = Math.round(progress() * last);
+            state.last = state.current;
+            state.anim.goToAndStop(state.current, true);
+            window.addEventListener('scroll', update, { passive: true });
+            window.addEventListener('resize', update);
+          }
+          container.classList.add('is-loaded');
+        });
+      }).catch(function () {
+        container.removeAttribute('data-bloem-ready');
+      });
+    }
+
+    state.destroy = function () {
+      state.destroyed = true;
+      if (state.observer) state.observer.disconnect();
+      if (state.raf) cancelAnimationFrame(state.raf);
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      if (state.anim) state.anim.destroy();
+    };
+
+    // Pas laden als de bloem binnen ongeveer één schermhoogte komt.
+    if ('IntersectionObserver' in window) {
+      state.observer = new IntersectionObserver(function (entries) {
+        if (entries.some(function (e) { return e.isIntersecting; })) {
+          state.observer.disconnect();
+          start();
+        }
+      }, { rootMargin: '100% 0px 100% 0px' });
+      state.observer.observe(container);
+    } else {
+      start();
+    }
+
+    bloemen.push(state);
+  }
+
+  // Ook aan te roepen na een Barba-paginawissel: ruimt weggehaalde bloemen op en start nieuwe.
+  function initBloemen(root) {
+    bloemen = bloemen.filter(function (b) {
+      if (document.documentElement.contains(b.container)) return true;
+      b.destroy();
+      return false;
+    });
+    var scope = root || document;
+    Array.prototype.forEach.call(scope.querySelectorAll('[data-bloem-lottie]'), initBloem);
+  }
+
+  window.MentingBloem = { init: initBloemen };
+
   function init() {
+    initBloemen();
+
     var navbar = document.querySelector('[data-navbar]');
     if (!navbar || navbar.hasAttribute('data-navbar-ready')) return;
     navbar.setAttribute('data-navbar-ready', '');
