@@ -2,7 +2,7 @@
  * Menting – main.js
  * Geladen in Webflow via jsDelivr: https://cdn.jsdelivr.net/gh/dondrs/menting@main/dist/main.js
  * Vereist GSAP (wordt vóór dit bestand geladen in de site-footer). Zonder GSAP werkt het menu nog, maar zonder animatie.
- * De scroll-bloem laadt lottie-web zelf (alleen op pagina's met [data-bloem-lottie]).
+ * De scroll-bloem leest de Lottie-JSON zelf en tekent de frames op een canvas (geen lottie-web nodig).
  * Smooth scroll via Lenis (in de site-footer vóór dit bestand geladen); zonder Lenis werkt alles met native scroll.
  */
 (function () {
@@ -283,34 +283,34 @@
   }
 
   /* ------------------------------------------------------------------
-   * Bloem op scroll (Lottie)
+   * Bloem op scroll (beeldreeks uit de Lottie-JSON, getekend op canvas)
    * Markup (homepage, sectie "Werken & Leren"):
    *   [data-bloem-section]                       de sectie
-   *     [data-bloem-lottie="<url naar .json>"]   container voor de Lottie
+   *     [data-bloem-lottie="<url naar .json>"]   container voor de bloem
+   * De JSON is een Lottie-export met per frame één afbeelding (data-URI). In plaats van
+   * lottie-web (dat per frame tussen 200 svg-afbeeldingen wisselt en dan moet decoderen)
+   * worden alle frames vooraf op de achtergrond gedecodeerd en per scrollframe met één
+   * drawImage op een canvas gezet. Dat houdt het scrollen (ook met Lenis) vloeiend.
    * De bloem gaat open zodra de container onderin beeld komt en is helemaal open
    * als de onderkant van de sectie de onderkant van het scherm raakt.
    * Terugscrollen = de bloem gaat weer dicht (frame volgt de scrollpositie).
-   * lottie-web wordt pas geladen als de bloem in de buurt komt (JSON is ~11 MB).
+   * De JSON (~11 MB) wordt pas geladen als de bloem in de buurt komt.
    * Bij prefers-reduced-motion staat de bloem direct open, zonder scroll-koppeling.
    * ------------------------------------------------------------------ */
-  var LOTTIE_SRC = 'https://cdn.jsdelivr.net/npm/lottie-web@5.12.2/build/player/lottie_light.min.js';
-  var lottieLoading = null;
-
-  function loadLottie() {
-    if (window.lottie) return Promise.resolve(window.lottie);
-    if (lottieLoading) return lottieLoading;
-    lottieLoading = new Promise(function (resolve, reject) {
-      var script = document.createElement('script');
-      script.src = LOTTIE_SRC;
-      script.async = true;
-      script.onload = function () { window.lottie ? resolve(window.lottie) : reject(new Error('lottie ontbreekt')); };
-      script.onerror = function () { lottieLoading = null; reject(new Error('lottie niet geladen')); };
-      document.head.appendChild(script);
-    });
-    return lottieLoading;
-  }
-
   var bloemen = [];
+
+  // Frames in afspeelvolgorde: de beeldlagen gesorteerd op hun startframe (ip).
+  function bloemFrames(data) {
+    var assets = {};
+    (data.assets || []).forEach(function (a) {
+      if (typeof a.p === 'string' && a.p.indexOf('data:') === 0) assets[a.id] = a.p;
+    });
+    var layers = (data.layers || [])
+      .filter(function (l) { return l.refId && assets[l.refId]; })
+      .sort(function (a, b) { return (a.ip || 0) - (b.ip || 0); });
+    if (layers.length) return layers.map(function (l) { return assets[l.refId]; });
+    return Object.keys(assets).map(function (k) { return assets[k]; });
+  }
 
   function initBloem(container) {
     if (container.hasAttribute('data-bloem-ready')) return;
@@ -323,8 +323,10 @@
 
     var state = {
       container: container,
-      anim: null,
-      last: 0,          // laatste frame-index
+      canvas: null,
+      ctx: null,
+      frames: [],       // Image-objecten; .ready = gedecodeerd
+      last: -1,         // laatst getekende frame-index
       current: 0,       // huidig (vloeiend) frame
       target: 0,        // doel-frame volgens scrollpositie
       raf: 0,
@@ -342,65 +344,92 @@
       return p < 0 ? 0 : p > 1 ? 1 : p;
     }
 
+    // Teken frame i, of het dichtstbijzijnde frame dat al gedecodeerd is.
+    function draw(i) {
+      var frames = state.frames;
+      var img = null;
+      for (var d = 0; d < frames.length && !img; d++) {
+        if (frames[i - d] && frames[i - d].ready) img = frames[i - d];
+        else if (frames[i + d] && frames[i + d].ready) img = frames[i + d];
+      }
+      if (!img || img === state.drawn) return;
+      state.ctx.clearRect(0, 0, state.canvas.width, state.canvas.height);
+      state.ctx.drawImage(img, 0, 0, state.canvas.width, state.canvas.height);
+      state.drawn = img;
+    }
+
     function render() {
       state.raf = 0;
-      if (!state.anim || state.destroyed) return;
+      if (state.destroyed) return;
       // Zonder Lenis licht naijlen voor een zachte beweging (met Lenis is het scrollen zelf al vloeiend);
       // dichtbij het doel direct vastzetten.
       var diff = state.target - state.current;
       state.current = (lenis || Math.abs(diff) < 0.5) ? state.target : state.current + diff * 0.18;
       var frame = Math.round(state.current);
       if (frame !== state.last) {
-        state.anim.goToAndStop(frame, true);
+        draw(frame);
         state.last = frame;
       }
       if (state.current !== state.target) state.raf = requestAnimationFrame(render);
     }
 
     function update() {
-      if (!state.anim || state.destroyed) return;
-      state.target = progress() * (state.anim.totalFrames - 1);
+      if (state.destroyed || !state.frames.length) return;
+      state.target = progress() * (state.frames.length - 1);
       if (!state.raf) state.raf = requestAnimationFrame(render);
     }
 
+    function decode(img) {
+      var done = function () {
+        img.ready = true;
+        // Was dit het frame dat nu in beeld hoort? Dan alsnog tekenen.
+        if (Math.round(state.current) === state.frames.indexOf(img)) { state.last = -1; update(); }
+      };
+      return (img.decode ? img.decode() : new Promise(function (r) { img.onload = r; })).then(done, done);
+    }
+
     function start() {
-      var data = fetch(src).then(function (res) {
+      fetch(src).then(function (res) {
         if (!res.ok) throw new Error('bloem-json ' + res.status);
         return res.json();
-      });
-      Promise.all([loadLottie(), data]).then(function (result) {
-        var lottie = result[0];
-        var animationData = result[1];
+      }).then(function (data) {
         if (state.destroyed) return;
-        // De beelden zitten als data-URI in de JSON maar staan gemarkeerd als extern (e: 0);
-        // dan plakt lottie er een pad voor en mislukt het laden. Markeer ze als ingebed.
-        (animationData.assets || []).forEach(function (asset) {
-          if (typeof asset.p === 'string' && asset.p.indexOf('data:') === 0) {
-            asset.e = 1;
-            asset.u = '';
-          }
+        var urls = bloemFrames(data);
+        if (!urls.length) throw new Error('geen frames in bloem-json');
+
+        var canvas = state.canvas = document.createElement('canvas');
+        canvas.width = data.w || 1280;
+        canvas.height = data.h || 720;
+        canvas.setAttribute('aria-hidden', 'true');
+        state.ctx = canvas.getContext('2d');
+        container.appendChild(canvas);
+
+        state.frames = urls.map(function (url) {
+          var img = new Image();
+          img.decoding = 'async';
+          img.src = url;
+          return img;
         });
-        state.anim = lottie.loadAnimation({
-          container: container,
-          renderer: 'svg',
-          loop: false,
-          autoplay: false,
-          animationData: animationData,
-          rendererSettings: { preserveAspectRatio: 'xMidYMax meet' }
-        });
-        state.anim.addEventListener('DOMLoaded', function () {
-          var last = state.anim.totalFrames - 1;
-          if (reduce) {
-            state.anim.goToAndStop(last, true);
-          } else {
-            // Direct op de juiste stand beginnen, zonder naijlen.
-            state.current = state.target = Math.round(progress() * last);
-            state.last = state.current;
-            state.anim.goToAndStop(state.current, true);
-            window.addEventListener('scroll', update, { passive: true });
-            window.addEventListener('resize', update);
-          }
+        var last = state.frames.length - 1;
+
+        if (reduce) {
+          decode(state.frames[last]).then(function () {
+            draw(last);
+            container.classList.add('is-loaded');
+          });
+          return;
+        }
+
+        // Eerst het frame dat nu in beeld hoort, dan de rest (decoderen gebeurt buiten de main thread).
+        state.current = state.target = Math.round(progress() * last);
+        decode(state.frames[state.current]).then(function () {
+          if (state.destroyed) return;
+          draw(state.current);
+          state.last = state.current;
           container.classList.add('is-loaded');
+          window.addEventListener('scroll', update, { passive: true });
+          window.addEventListener('resize', update);
+          state.frames.forEach(function (img) { if (!img.ready) decode(img); });
         });
       }).catch(function () {
         container.removeAttribute('data-bloem-ready');
@@ -413,7 +442,8 @@
       if (state.raf) cancelAnimationFrame(state.raf);
       window.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
-      if (state.anim) state.anim.destroy();
+      if (state.canvas) state.canvas.remove();
+      state.frames = [];
     };
 
     // Pas laden als de bloem binnen ongeveer één schermhoogte komt.
@@ -459,7 +489,7 @@
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     lenis = window.MentingLenis = new window.Lenis({
-      lerp: 0.1,
+      lerp: 0.075,          // lager = zachter uitglijden
       wheelMultiplier: 1,
       anchors: true
     });
