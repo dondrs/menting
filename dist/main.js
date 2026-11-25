@@ -4,6 +4,7 @@
  * Vereist GSAP (wordt vóór dit bestand geladen in de site-footer). Zonder GSAP werkt het menu nog, maar zonder animatie.
  * De scroll-bloem leest de Lottie-JSON zelf en tekent de frames op een canvas (geen lottie-web nodig).
  * Smooth scroll via Lenis (in de site-footer vóór dit bestand geladen); zonder Lenis werkt alles met native scroll.
+ * Parallax-lagen via [data-parallax="<snelheid>"].
  */
 (function () {
   'use strict';
@@ -279,6 +280,7 @@
       }
       nav.update();
       initBloemen();
+      initParallax();
     });
   }
 
@@ -476,6 +478,57 @@
   window.MentingBloem = { init: initBloemen };
 
   /* ------------------------------------------------------------------
+   * Parallax-achtergronden
+   * Markup: [data-parallax="0.25"] = een absolute laag in een sectie, die boven en onder
+   * uitsteekt (bijv. top/bottom: -15%). De waarde is de snelheid t.o.v. de pagina:
+   * 0.25 = de laag verschuift 25% van de afstand tot het midden van het scherm.
+   * De verschuiving wordt begrensd op de uitsteekruimte, zodat er nooit een rand zichtbaar wordt.
+   * Uit bij prefers-reduced-motion. Werkt met en zonder Lenis (beide geven scroll-events).
+   * ------------------------------------------------------------------ */
+  var parallaxen = [];
+  var parallaxTicking = false;
+
+  function updateParallax() {
+    parallaxTicking = false;
+    var vh = window.innerHeight;
+    parallaxen = parallaxen.filter(function (p) { return document.documentElement.contains(p.el); });
+    parallaxen.forEach(function (p) {
+      var host = p.el.parentElement;
+      var r = host.getBoundingClientRect();
+      if (r.bottom < -vh * 0.5 || r.top > vh * 1.5) return; // ver buiten beeld: niets doen
+      var offset = (r.top + r.height / 2) - vh / 2;
+      var max = (p.el.offsetHeight - r.height) / 2; // uitsteekruimte boven/onder
+      var y = -offset * p.speed;
+      if (y > max) y = max;
+      if (y < -max) y = -max;
+      p.el.style.transform = 'translate3d(0,' + y.toFixed(1) + 'px,0)';
+    });
+  }
+
+  function requestParallax() {
+    if (parallaxTicking) return;
+    parallaxTicking = true;
+    requestAnimationFrame(updateParallax);
+  }
+
+  function initParallax(root) {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var scope = root || document;
+    Array.prototype.forEach.call(scope.querySelectorAll('[data-parallax]'), function (el) {
+      if (el.hasAttribute('data-parallax-ready')) return;
+      el.setAttribute('data-parallax-ready', '');
+      var speed = parseFloat(el.getAttribute('data-parallax'));
+      parallaxen.push({ el: el, speed: isNaN(speed) ? 0.25 : speed });
+    });
+    if (!initParallax.bound) {
+      initParallax.bound = true;
+      window.addEventListener('scroll', requestParallax, { passive: true });
+      window.addEventListener('resize', requestParallax);
+    }
+    requestParallax();
+  }
+
+  /* ------------------------------------------------------------------
    * Smooth scroll (Lenis)
    * Lenis wordt in de site-footer vóór dit bestand geladen. Loopt mee op de GSAP-ticker
    * als GSAP er is, anders op requestAnimationFrame. Uit bij prefers-reduced-motion.
@@ -513,6 +566,7 @@
   function init() {
     initLenis();
     initBloemen();
+    initParallax();
     Array.prototype.forEach.call(document.querySelectorAll('[data-menu]'), function (menu) {
       menu.setAttribute('data-lenis-prevent', '');
     });
