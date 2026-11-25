@@ -3,6 +3,7 @@
  * Geladen in Webflow via jsDelivr: https://cdn.jsdelivr.net/gh/dondrs/menting@main/dist/main.js
  * Vereist GSAP (wordt vóór dit bestand geladen in de site-footer). Zonder GSAP werkt het menu nog, maar zonder animatie.
  * De scroll-bloem laadt lottie-web zelf (alleen op pagina's met [data-bloem-lottie]).
+ * Smooth scroll via Lenis (in de site-footer vóór dit bestand geladen); zonder Lenis werkt alles met native scroll.
  */
 (function () {
   'use strict';
@@ -88,6 +89,7 @@
       logoDark(false);
       navbar.classList.add('is-menu-open');
       root.classList.add('is-menu-locked');
+      if (lenis) lenis.stop();
       setA11y(true);
       show(true);
 
@@ -108,6 +110,7 @@
       if (!isOpen) return;
       isOpen = false;
       root.classList.remove('is-menu-locked');
+      if (lenis) lenis.start();
       setA11y(false);
 
       var done = function () {
@@ -269,7 +272,14 @@
     if (!barba || !barba.hooks || nav._barbaConnected) return;
     nav._barbaConnected = true;
     barba.hooks.beforeLeave(function () { nav.close(false); });
-    barba.hooks.after(function () { nav.update(); initBloemen(); });
+    barba.hooks.after(function () {
+      if (lenis) {
+        lenis.scrollTo(0, { immediate: true, force: true });
+        lenis.resize();
+      }
+      nav.update();
+      initBloemen();
+    });
   }
 
   /* ------------------------------------------------------------------
@@ -335,9 +345,10 @@
     function render() {
       state.raf = 0;
       if (!state.anim || state.destroyed) return;
-      // Licht naijlen voor een zachte beweging; dichtbij het doel direct vastzetten.
+      // Zonder Lenis licht naijlen voor een zachte beweging (met Lenis is het scrollen zelf al vloeiend);
+      // dichtbij het doel direct vastzetten.
       var diff = state.target - state.current;
-      state.current = Math.abs(diff) < 0.5 ? state.target : state.current + diff * 0.18;
+      state.current = (lenis || Math.abs(diff) < 0.5) ? state.target : state.current + diff * 0.18;
       var frame = Math.round(state.current);
       if (frame !== state.last) {
         state.anim.goToAndStop(frame, true);
@@ -434,8 +445,47 @@
 
   window.MentingBloem = { init: initBloemen };
 
+  /* ------------------------------------------------------------------
+   * Smooth scroll (Lenis)
+   * Lenis wordt in de site-footer vóór dit bestand geladen. Loopt mee op de GSAP-ticker
+   * als GSAP er is, anders op requestAnimationFrame. Uit bij prefers-reduced-motion.
+   * Het menu zet Lenis stil (stop/start); elementen die zelf moeten kunnen scrollen
+   * krijgen data-lenis-prevent. window.MentingLenis = de Lenis-instantie (of null).
+   * ------------------------------------------------------------------ */
+  var lenis = null;
+
+  function initLenis() {
+    if (lenis || !window.Lenis) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    lenis = window.MentingLenis = new window.Lenis({
+      lerp: 0.1,
+      wheelMultiplier: 1,
+      anchors: true
+    });
+
+    var gsap = window.gsap;
+    if (gsap && gsap.ticker) {
+      gsap.ticker.add(function (time) { lenis.raf(time * 1000); });
+      gsap.ticker.lagSmoothing(0);
+    } else {
+      var raf = function (time) {
+        lenis.raf(time);
+        requestAnimationFrame(raf);
+      };
+      requestAnimationFrame(raf);
+    }
+
+    // Afbeeldingen/fonts kunnen de paginahoogte nog veranderen.
+    window.addEventListener('load', function () { lenis.resize(); });
+  }
+
   function init() {
+    initLenis();
     initBloemen();
+    Array.prototype.forEach.call(document.querySelectorAll('[data-menu]'), function (menu) {
+      menu.setAttribute('data-lenis-prevent', '');
+    });
 
     var navbar = document.querySelector('[data-navbar]');
     if (!navbar || navbar.hasAttribute('data-navbar-ready')) return;
